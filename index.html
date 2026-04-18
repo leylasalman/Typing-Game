@@ -141,7 +141,7 @@
 
     .results {
       display: none;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 24px;
       margin-top: 20px;
       margin-bottom: 40px;
@@ -184,6 +184,10 @@
       color: var(--incorrect);
     }
 
+    .grd .metric-value {
+      color: #bb86fc;
+    }
+
     .loader {
       border: 4px solid var(--border-color);
       border-top: 4px solid var(--primary);
@@ -218,22 +222,50 @@
         font-size: 2.5rem;
       }
     }
+
+    .leaderboard {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border-color);
+      width: 100%;
+    }
+    .leaderboard h2 {
+      text-align: center;
+      color: var(--primary);
+      margin-top: 0;
+      margin-bottom: 20px;
+      font-size: 1.5rem;
+    }
+    #leaderboard-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    #leaderboard-list li {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 15px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      background: var(--card-bg);
+      margin-bottom: 8px;
+      border-radius: 8px;
+    }
+    #leaderboard-list li span.score {
+      color: var(--correct);
+      font-weight: bold;
+    }
   </style>
 </head>
 
 <body>
-
   <div class="container">
     <h1>Typing Speed Game</h1>
-
     <div class="loader" id="loader"></div>
-
     <div id="game-area">
       <div id="sentence-display"></div>
       <input type="text" id="typing-input" autocomplete="off" disabled>
       <button id="start-btn" disabled>Loading...</button>
     </div>
-
     <div class="results" id="results">
       <div class="metric-card wpm">
         <div class="metric-value" id="wpm-value">0</div>
@@ -247,11 +279,17 @@
         <div class="metric-value" id="err-value">0</div>
         <div class="metric-label">Errors</div>
       </div>
+      <div class="metric-card grd">
+        <div class="metric-value" id="grd-value">-</div>
+        <div class="metric-label">Grade</div>
+      </div>
     </div>
-
     <button id="play-again-btn" style="display: none;">Play Again</button>
+    <div id="leaderboard" class="leaderboard">
+      <h2>Top Scores</h2>
+      <ul id="leaderboard-list"></ul>
+    </div>
   </div>
-
   <script>
     const sentenceDisplay = document.getElementById('sentence-display');
     const typingInput = document.getElementById('typing-input');
@@ -260,10 +298,12 @@
     const gameArea = document.getElementById('game-area');
     const results = document.getElementById('results');
     const playAgainBtn = document.getElementById('play-again-btn');
-
     const wpmValue = document.getElementById('wpm-value');
     const accValue = document.getElementById('acc-value');
     const errValue = document.getElementById('err-value');
+    const grdValue = document.getElementById('grd-value');
+    const leaderboardContainer = document.getElementById('leaderboard');
+    const leaderboardList = document.getElementById('leaderboard-list');
 
     let targetSentence = '';
     let startTime = null;
@@ -272,54 +312,54 @@
     let errorsMade = 0;
     let totalKeystrokes = 0;
     let previousLength = 0;
+    const sentences = [
+      "The quick brown fox jumps over the lazy dog.",
+      "Programming is the art of telling another human what one wants the computer to do.",
+      "A user interface is like a joke. If you have to explain it, it's not that good.",
+      "Code is read much more often than it is written.",
+      "Simplicity is the soul of efficiency.",
+      "In software, the most beautiful code is the code that is not written.",
+      "Before software can be reusable it first has to be usable.",
+      "Any fool can write code that a computer can understand. Good programmers write code that humans can understand.",
+      "There are only two hard things in Computer Science: cache invalidation and naming things.",
+      "Design is not just what it looks like and feels like. Design is how it works.",
+      "First, solve the problem. Then, write the code.",
+      "Experience is the name everyone gives to their mistakes.",
+      "Java is to JavaScript what car is to Carpet.",
+      "Sometimes it pays to stay in bed on Monday, rather than spending the rest of the week debugging Monday's code."
+    ];
 
-    async function fetchSentence() {
-      startBtn.disabled = true;
-      startBtn.textContent = 'Loading...';
-      typingInput.disabled = true;
-      typingInput.placeholder = 'Fetching a new sentence...';
-      sentenceDisplay.innerHTML = '';
-      loader.style.display = 'block';
-
-      try {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 100,
-            messages: [
-              {
-                role: 'user',
-                content: 'Generate a short, fun sentence (10-15 words) for a typing game. Return only the sentence with no punctuation at the end, no quotes, no extra explanation.'
-              }
-            ]
-          })
-        });
-
-        const data = await response.json();
-        if (data && data.content && data.content.length > 0) {
-          targetSentence = data.content[0].text.trim();
-        } else {
-          throw new Error('Invalid response format');
-        }
-      } catch (error) {
-        console.error('Error fetching sentence:', error);
-        // Fallback sentence if API fails
-        targetSentence = 'The quick brown fox jumps over the lazy dog and escapes';
-      } finally {
-        loader.style.display = 'none';
-        renderSentence();
-        startBtn.disabled = false;
-        startBtn.textContent = 'Start';
-        typingInput.disabled = false;
-        typingInput.placeholder = 'Click Start or begin typing...';
-      }
+    function saveScore(wpm, accuracy) {
+      const scores = JSON.parse(localStorage.getItem('typingLeaderboard') || '[]');
+      scores.push({ wpm, accuracy, date: new Date().toLocaleDateString() });
+      scores.sort((a, b) => b.wpm - a.wpm);
+      scores.splice(5); // Keep top 5
+      localStorage.setItem('typingLeaderboard', JSON.stringify(scores));
+      renderLeaderboard();
     }
 
+    function renderLeaderboard() {
+      const scores = JSON.parse(localStorage.getItem('typingLeaderboard') || '[]');
+      if (scores.length === 0) {
+        leaderboardList.innerHTML = '<li><span style="color:var(--text-muted);width:100%;text-align:center;">No scores yet. Play a game!</span></li>';
+        return;
+      }
+      leaderboardList.innerHTML = scores.map((s, i) => `
+        <li>
+          <span>#${i + 1} <span class="score">${s.wpm} WPM</span> (${s.accuracy}%)</span>
+          <span>${s.date}</span>
+        </li>
+      `).join('');
+    }
+
+    function pickSentence() {
+      targetSentence = sentences[Math.floor(Math.random() * sentences.length)];
+      renderSentence();
+      startBtn.disabled = false;
+      startBtn.textContent = 'Start';
+      typingInput.disabled = false;
+      typingInput.placeholder = 'Click Start or begin typing...';
+    }
     function renderSentence() {
       sentenceDisplay.innerHTML = '';
       targetSentence.split('').forEach(char => {
@@ -328,7 +368,6 @@
         sentenceDisplay.appendChild(span);
       });
     }
-
     function startGame() {
       if (gameStarted) return;
       gameStarted = true;
@@ -337,48 +376,51 @@
       errorsMade = 0;
       totalKeystrokes = 0;
       previousLength = typingInput.value.length;
-
       startBtn.style.display = 'none';
+      leaderboardContainer.style.display = 'none';
       typingInput.focus();
       typingInput.placeholder = 'Type the sentence here...';
     }
-
     function endGame() {
       gameEnded = true;
       typingInput.disabled = true;
-
       const endTime = new Date();
       const elapsedSeconds = (endTime - startTime) / 1000;
       const words = targetSentence.trim().split(/\s+/).length;
-
       const wpm = elapsedSeconds > 0 ? Math.round((words / elapsedSeconds) * 60) : 0;
       const accuracy = totalKeystrokes === 0 ? 0 : Math.round(((totalKeystrokes - errorsMade) / totalKeystrokes) * 100);
-
       wpmValue.textContent = wpm;
       accValue.textContent = `${Math.max(0, accuracy)}%`;
       errValue.textContent = errorsMade;
+      let grade = 'F';
+      let gradeColor = 'var(--incorrect)';
+      if (wpm >= 100) { grade = 'S'; gradeColor = '#bb86fc'; }
+      else if (wpm >= 80) { grade = 'A'; gradeColor = 'var(--correct)'; }
+      else if (wpm >= 60) { grade = 'B'; gradeColor = '#60a5fa'; }
+      else if (wpm >= 40) { grade = 'C'; gradeColor = '#facc15'; }
+      else if (wpm >= 20) { grade = 'D'; gradeColor = '#fb923c'; }
 
+      grdValue.textContent = grade;
+      grdValue.style.color = gradeColor;
       gameArea.style.display = 'none';
       results.style.display = 'grid';
       playAgainBtn.style.display = 'block';
-    }
 
+      saveScore(wpm, accuracy);
+      leaderboardContainer.style.display = 'block';
+    }
     typingInput.addEventListener('input', (e) => {
       if (gameEnded) return;
-
       if (!gameStarted) {
         startGame();
       }
-
       let typedText = typingInput.value;
       const spans = sentenceDisplay.querySelectorAll('span');
-
       // Prevent typing past the end of the sentence
       if (typedText.length > targetSentence.length) {
         typingInput.value = typedText.substring(0, targetSentence.length);
         typedText = typingInput.value;
       }
-
       // Calculate errors and keystrokes based on newly added text
       if (typedText.length > previousLength) {
         const addedText = typedText.substring(previousLength);
@@ -390,12 +432,10 @@
         }
       }
       previousLength = typedText.length;
-
       // Update display colors on the sentence
       spans.forEach((span, index) => {
         const char = typedText[index];
         span.className = '';
-
         if (char == null) {
           // Not typed yet
         } else if (char === span.innerText) {
@@ -404,33 +444,28 @@
           span.classList.add('incorrect');
         }
       });
-
       // Check if finished typing the full sentence
       if (typedText.length === targetSentence.length) {
         endGame();
       }
     });
-
     startBtn.addEventListener('click', startGame);
-
     playAgainBtn.addEventListener('click', () => {
       results.style.display = 'none';
       playAgainBtn.style.display = 'none';
       gameArea.style.display = 'flex';
       startBtn.style.display = 'block';
-
+      leaderboardContainer.style.display = 'block';
       gameStarted = false;
       gameEnded = false;
       typingInput.value = '';
       previousLength = 0;
-
-      fetchSentence();
+      pickSentence();
     });
-
-    // Initialize the game by fetching the first sentence
-    fetchSentence();
+    // Initialize the game by picking the first sentence
+    pickSentence();
+    renderLeaderboard();
   </script>
-
 </body>
 
 </html>
